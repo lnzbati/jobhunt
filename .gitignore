@@ -1,0 +1,25 @@
+# Personal data — never commit
+profile/*
+!profile/*.example.*
+!profile/README.md
+companies.yaml
+applications/*
+!applications/.gitkeep
+data/*
+!data/.gitkeep
+
+# Captures may contain cookies/tokens
+*.har
+*.ndjson
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+.DS_Store
+
+# reverse-api-engineer captures
+rae*.log

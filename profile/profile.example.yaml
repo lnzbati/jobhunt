@@ -1,0 +1,81 @@
+# Copy to profile/profile.yaml (gitignored) and fill in.
+# Everything here is reused verbatim when filling application forms.
+
+me:
+  name: Alex Example
+  email: alex@example.com
+  phone: "+44 7700 900000"
+  location: London, UK
+  linkedin: linkedin.com/in/alex-example
+  github: github.com/alex-example
+  website:
+
+# What to look for. Discovery keeps a role if its title matches ANY title_include
+# term, matches NO title_exclude term, and is in one of `locations` (or remote).
+search:
+  # Big custom career sites (Apple/Google/Microsoft/Meta) are searched with these.
+  queries:
+    - software engineer
+    - machine learning engineer
+  title_include:
+    - engineer
+    - scientist
+    - developer
+  title_exclude:
+    - intern
+    - internship
+    - principal
+    - director
+    - manager
+  locations:
+    - London
+    - United Kingdom
+    - UK
+  remote_ok: true
+  # A remote role counts only if its location mentions one of these (remote-US roles don't).
+  remote_regions: [Europe, EMEA, Anywhere, Worldwide, Global]
+  # Server-side filters for the big custom sites (they have tens of thousands of roles).
+  site_filters:
+    apple:
+      location: united-kingdom-GBR   # slug from the jobs.apple.com location filter
+    google:
+      location: London, UK          # string or list; covers DeepMind/YouTube too
+    microsoft:
+      location: United Kingdom
+      filters:
+        employment_type: [full-time]
+
+# Claude uses this to score and shortlist (0-100). Be specific.
+preferences:
+  seniority: mid-senior (4-8 years)
+  target_roles: backend / ML infrastructure / applied ML
+  must_have: []
+  nice_to_have: [autonomy, research-adjacent teams]
+  avoid: [pure frontend, on-call heavy SRE]
+  min_score_to_shortlist: 65
+
+# Standard answers for application forms. Claude never invents these.
+application:
+  work_authorisation:
+    UK: "Yes — no sponsorship required"
+    EU: "Yes — EU citizen"
+    US: "No — would require sponsorship"
+  willing_to_relocate: true
+  notice_period: "1 month"
+  earliest_start: "1 month from offer"
+  salary_expectation:
+    GBP: "Open; targeting market rate for the level"
+  how_did_you_hear: "Company careers page"
+  pronouns: ""
+  # Voluntary demographic / EEO questions — "Decline to self-identify" is a valid default.
+  demographics:
+    gender: Decline to self-identify
+    ethnicity: Decline to self-identify
+    veteran_status: Decline to self-identify
+    disability: Decline to self-identify
+
+# Approval gate. Submitting is irreversible, so the default is to stop before submit
+# and wait for explicit approval of each batch.
+apply:
+  require_approval: true
+  max_applications_per_company_per_week: 2

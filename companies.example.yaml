@@ -1,0 +1,42 @@
+# Example company list. Copy it to start (`cp companies.example.yaml companies.yaml`) or
+# let `jobhunt add "<Name>"` create companies.yaml for you. companies.yaml is gitignored.
+#
+# Each entry:  <key>:            short id, used in job uids and in profile.yaml site_filters
+#                name:           display name
+#                source:         which adapter reads it (`jobhunt sources` lists them)
+#                ...             source-specific fields (below)
+#                enabled: false  pause without deleting
+#                queries: [...]  override profile.search.queries for this company (search-based sources)
+#
+# Public ATS boards. `jobhunt add "<Name>" [--url <careers page>]` finds the board for you.
+#   greenhouse | lever | ashby   board: <slug from the board URL>
+#
+# Built-in custom-site sources (reverse-engineered), added by name: `jobhunt add Apple`
+#   apple                        jobs.apple.com
+#   google                       Google careers, incl. DeepMind / YouTube
+#   meta                         metacareers.com
+#   eightfold                    any Eightfold.ai careers site, needs base_url + domain (Microsoft preset)
+#
+# Anything else: build a source with reverse-api-engineer. See docs/adding-a-source.md.
+
+companies:
+  stripe:
+    name: Stripe
+    source: greenhouse
+    board: stripe
+  cohere:
+    name: Cohere
+    source: ashby
+    board: cohere
+  palantir:
+    name: Palantir
+    source: lever
+    board: palantir
+  microsoft:
+    name: Microsoft
+    source: eightfold
+    base_url: https://apply.careers.microsoft.com
+    domain: microsoft.com
+  apple:
+    name: Apple
+    source: apple
