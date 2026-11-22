@@ -252,6 +252,7 @@ The step-by-step guide is in **[docs/adding-a-source.md](docs/adding-a-source.md
 | 🚫 **No made-up experience** | Every line in a CV or letter must come from your facts file. Gaps are reported, not covered up. |
 | 🤖 **Employers' AI policies respected** | If a form asks you to write an answer yourself, Claude leaves it for you. |
 | 🧩 **No tricks** | It never solves captchas or gets around logins, and it doesn't touch LinkedIn (automating it gets accounts banned). |
+| 🔑 **Your passwords stay yours** | You type passwords and verification codes yourself, in the browser. They're never asked for in chat or saved. |
 
 > [!NOTE]
 > When you share your CV with Claude, or Claude reads your files, that content is part of
@@ -299,11 +300,24 @@ meantime.
 </details>
 
 <details>
-<summary><b>The site wants me to log in or solve a captcha.</b></summary>
+<summary><b>The site wants me to sign in, or asks one question per screen.</b></summary>
 
-Claude pauses and hands over to you. Log in or solve it in the browser, tell Claude you're
-done, and it carries on. Apple, Google, Microsoft, Meta and Workday sites all need an account
-to apply.
+Many big-company portals do this: email → Next → name → Next → a code sent by email… `/apply`
+works through them one screen at a time. It fills your email, name and phone from your profile.
+**You** type the password and any verification code, and solve captchas, in the same browser
+window. It never asks for your password in chat or stores it. It also double-checks answers
+the site pre-filled from an earlier application, since those are often out of date.
+
+Make sure Claude's browser is one you can see and type into (for gstack, `/open-gstack-browser`).
+</details>
+
+<details>
+<summary><b>Can it remember how a particular site works?</b></summary>
+
+Yes. When `/apply` learns something about a site (a redirect to wait out, a button label, a
+field that's always pre-filled wrongly), it writes it to `profile/apply-notes.md` and reads it
+on every run. The file is private (gitignored). See
+[`profile/apply-notes.example.md`](profile/apply-notes.example.md) for the format.
 </details>
 
 <details>
@@ -351,6 +365,14 @@ See [`profile/profile.example.yaml`](profile/profile.example.yaml). Its sections
 See [`profile/master_facts.example.md`](profile/master_facts.example.md). List every role,
 achievement (with numbers) and skill you can back up in an interview. Add a "Do not mention"
 section for anything confidential.
+</details>
+
+<details>
+<summary><b>profile/apply-notes.md</b>: what it has learned about specific sites</summary>
+
+Optional and created by `/apply` as it goes. It holds notes per careers site (sign-in steps,
+button labels, pre-filled fields to re-check), read at the start of every run. See
+[`profile/apply-notes.example.md`](profile/apply-notes.example.md).
 </details>
 
 <details>

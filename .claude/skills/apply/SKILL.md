@@ -35,6 +35,9 @@ Look at the arguments the user passed:
 - `profile/profile.yaml` and `profile/master_facts.md` must exist and not be the examples.
   If they're missing, stop and point to `/job-hunt setup`.
 - Read both fully. They are the **only** source of facts about the user.
+- If `profile/apply-notes.md` exists, read it too. It holds the user's own notes about specific
+  sites (sign-in quirks, button labels, fields to double-check). Follow them, unless they
+  conflict with "Rules that always hold".
 - Check `apply.max_applications_per_company_per_week` with
   `uv run jobhunt jobs --status applied --company <key> --json`. If a role would exceed it,
   say so and skip that role unless the user overrides.
@@ -89,17 +92,76 @@ preference in the user's own instructions (CLAUDE.md). Otherwise use whichever i
 gstack `/browse`, Claude in Chrome, or a Playwright MCP. With no browser tool, stop here and
 give the user the folder (PDFs plus answers.md) and the apply URL to submit by hand.
 
+**The user must be able to see and type into that browser** whenever they may need to step in
+(sign-in, codes, captcha). If the tool runs headless, switch to a visible or signed-in mode
+first (for gstack: `/open-gstack-browser` or `/setup-browser-cookies`). Otherwise there's
+nothing for the user to type into.
+
 1. Open `apply_url` from job.json (or `url`, then its Apply button).
-2. Fill the standard fields from `profile.yaml → me` and `application` (name, email, phone,
+2. If the site asks you to sign in or create an account, follow "Sign-in and accounts" below.
+3. Work through the application **one screen at a time** ("Step-by-step forms" below). Fill
+   the standard fields from `profile.yaml → me` and `application` (name, email, phone,
    links, work authorisation, notice, demographics as configured). Upload `cv.pdf`, and
    `cover_letter.pdf` where there's a slot. Paste the answers from `answers.md`.
-3. Login, account creation, captcha or 2FA (Workday, and the Apple, Google, Microsoft and
-   Meta portals all need accounts): pause and hand over to the user, then continue once they
-   say it's done. Never try to get around one.
-4. Check the filled form against `answers.md` and the profile, especially email, phone and
-   the uploaded file names.
-5. Screenshot the completed form to `pre-submit.png` in the folder and **stop**. Don't
-   press submit. `uv run jobhunt status ready <uid>`.
+4. Check everything against `answers.md` and the profile before the end, especially email,
+   phone, the uploaded file names, and any answers the site pre-filled.
+5. On the final review page (or the completed form, for single-page forms), screenshot to
+   `pre-submit.png` in the folder and **stop**. Don't press submit.
+   `uv run jobhunt status ready <uid>`.
+
+### Step-by-step forms
+
+Many portals show one field or one page at a time: email → Next → name → Next → … Fields
+further on don't exist yet, so filling everything at once fails. Repeat until you reach the
+final review page:
+
+1. **Read the current screen** (fresh snapshot). Fill only the fields that are visible now.
+2. **Press that screen's own button** (Next, Continue, Save and continue). Never press the final
+   Submit or Apply: that waits for approval (step 5).
+3. **Wait for the screen to change**: a new field, heading or URL. Take a fresh snapshot before
+   typing again. Element references from the previous screen are stale.
+4. **If it didn't move on**, read the validation message, fix that field, and retry. After two
+   failed attempts on the same screen, stop and show the user the message.
+
+Things that commonly go wrong on these portals:
+
+- **Answers pre-filled from an earlier application** (old CV file, start date, salary,
+  relocation, "how did you hear", demographics, consents). Never accept them as they are.
+  Compare each one with the profile and this application, and fix any that differ. On a review
+  page, expand every collapsed section before checking.
+- **Fields that appear after a change**: picking an option can reveal a follow-up question.
+  Re-read the screen after every change.
+- **Dropdowns and dates**: after setting a dropdown, read the value back to confirm it took.
+  Type dates in the format the field's placeholder shows.
+- **Repeated questions**, such as consent or AI-use preferences, can come up on several steps.
+  Answer them the same way each time, from the profile or the user.
+- **Progress is saved as you go** on many portals. After each completed page, note the step in
+  `progress.md` in the folder, so `/apply resume` carries on from there.
+
+### Sign-in and accounts
+
+Many portals need an account before you can apply. With the user present:
+
+- **You fill the identity fields** one screen at a time from `profile.yaml → me`: email, first
+  and last name, phone, country.
+- **The user types passwords.** Never ask for a password in chat, store one, or write one to a
+  file.
+- **One-time codes** (email or SMS): pause and ask the user to type the code into the page, or
+  paste it in chat. Don't open their inbox to fetch it unless they explicitly ask in that run.
+- **Captcha, "are you a robot", passkeys, 2FA:** hand over and wait until the user says it's
+  done. Never try to get around one.
+- **Sign-in redirects**: some portals pass through intermediate pages after sign-in. Don't
+  navigate away mid-redirect. Wait until the application form is showing.
+- **Creating a new account** signs the user up to that site's terms: confirm once per site.
+- **Once signed in**, reuse the same browser session for the other applications on that site.
+
+### Site notes
+
+When a run teaches you something specific to a site (exact button labels, a redirect to wait
+out, a field that's always pre-filled wrongly, the selector for an upload input), add it under
+that site's heading in `profile/apply-notes.md`, with the date. Create the file from
+`profile/apply-notes.example.md` if it doesn't exist. It's private (gitignored) and is read
+at the start of every `/apply`. Keep personal data out of it: notes about the site, not answers.
 
 ## 5. Approval and submit
 
@@ -130,5 +192,6 @@ open questions still waiting on the user.
 - No fabrication, in the CV, the letter, answers or form fields.
 - No submission without explicit, per-application approval.
 - No captcha solving, no getting around logins, no automating LinkedIn.
+- Passwords are typed by the user only: never requested in chat, stored or written to a file.
 - The user's personal data stays in `profile/` and `applications/`, both gitignored. Never
   copy it anywhere else in the repo.
