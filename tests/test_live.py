@@ -41,3 +41,13 @@ def test_source_returns_jobs_with_descriptions(company, queries):
     assert j.title and j.url.startswith("https://") and j.external_id
     desc = j.description or (src.fetch_description(j) if hasattr(src, "fetch_description") else None)
     assert desc and len(desc) > 200, f"{company['key']}: no usable description"
+
+
+@pytest.mark.parametrize("company", [c for c, _ in CASES if c["source"] in ("greenhouse", "lever", "ashby")],
+                         ids=lambda c: c["key"])
+def test_import_roundtrip_from_discovered_url(company):
+    """A posting URL found by discovery imports back to the same uid."""
+    from jobhunt.importer import import_url
+    job = next(iter(get_source(company["source"]).fetch(company, [])))
+    again = import_url(job.url)
+    assert again.uid == job.uid and again.description

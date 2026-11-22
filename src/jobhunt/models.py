@@ -18,6 +18,7 @@ class Job:
     posted_at: str | None = None   # ISO 8601 when known
     apply_url: str | None = None
     description: str | None = None  # plain text when the listing provides it
+    meta: dict = field(default_factory=dict)  # source-specific extras, e.g. {"board": "stripe"}
 
     @property
     def uid(self) -> str:

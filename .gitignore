@@ -3,6 +3,8 @@ profile/*
 !profile/*.example.*
 !profile/README.md
 companies.yaml
+local_sources/*
+!local_sources/README.md
 applications/*
 !applications/.gitkeep
 data/*
@@ -23,3 +25,13 @@ dist/
 
 # reverse-api-engineer captures
 rae*.log
+
+# CVs / documents dropped in the repo root by mistake
+/*.pdf
+/*.docx
+/*.doc
+/*.odt
+.rae/
+
+# reverse-api-engineer copies generated clients here; port them into src/jobhunt/sources/ instead
+scripts/

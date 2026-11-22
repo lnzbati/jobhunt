@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     status      TEXT NOT NULL DEFAULT 'new',
     score       REAL,
     notes       TEXT,
+    meta        TEXT,          -- JSON dict of source-specific extras
     first_seen  TEXT NOT NULL,
     last_seen   TEXT NOT NULL,
     status_at   TEXT
@@ -50,6 +51,9 @@ def connect() -> sqlite3.Connection:
     db = sqlite3.connect(DATA_DIR / "jobs.db")
     db.row_factory = sqlite3.Row
     db.executescript(SCHEMA)
+    cols = {r["name"] for r in db.execute("PRAGMA table_info(jobs)")}
+    if "meta" not in cols:  # databases created before the meta column existed
+        db.execute("ALTER TABLE jobs ADD COLUMN meta TEXT")
     return db
 
 
@@ -61,20 +65,21 @@ def upsert(db: sqlite3.Connection, jobs: Iterable[Job]) -> tuple[int, int]:
         if row is None:
             db.execute(
                 """INSERT INTO jobs (uid, company, source, external_id, title, url, apply_url, locations,
-                   team, remote, posted_at, description, first_seen, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   team, remote, posted_at, description, meta, first_seen, last_seen)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (j.uid, j.company, j.source, j.external_id, j.title, j.url, j.apply_url,
-                 json.dumps(j.locations), j.team, j.remote, j.posted_at, j.description, now, now),
+                 json.dumps(j.locations), j.team, j.remote, j.posted_at, j.description,
+                 json.dumps(j.meta), now, now),
             )
             new += 1
         else:
             db.execute(
                 """UPDATE jobs SET title=?, url=?, apply_url=?, locations=?, team=?, remote=?, posted_at=?,
-                   description=COALESCE(?, description), last_seen=?,
+                   description=COALESCE(?, description), meta=?, last_seen=?,
                    status=CASE WHEN status='closed' THEN 'new' ELSE status END
                    WHERE uid=?""",
                 (j.title, j.url, j.apply_url, json.dumps(j.locations), j.team, j.remote, j.posted_at,
-                 j.description, now, j.uid),
+                 j.description, json.dumps(j.meta), now, j.uid),
             )
             updated += 1
     db.commit()
@@ -90,6 +95,16 @@ def mark_closed(db: sqlite3.Connection, company: str, seen_uids: set[str]) -> in
     db.executemany("UPDATE jobs SET status='closed', status_at=? WHERE uid=?", [(_now(), u) for u in gone])
     db.commit()
     return len(gone)
+
+
+def reopen_listed(db: sqlite3.Connection, company: str, listed_uids: set[str]) -> int:
+    """Closed roles that are still listed on the board are open again, even if the profile
+    filter no longer keeps them (filters change; a role's existence doesn't)."""
+    rows = db.execute("SELECT uid FROM jobs WHERE company=? AND status='closed'", (company,)).fetchall()
+    back = [r["uid"] for r in rows if r["uid"] in listed_uids]
+    db.executemany("UPDATE jobs SET status='new', status_at=? WHERE uid=?", [(_now(), u) for u in back])
+    db.commit()
+    return len(back)
 
 
 def set_status(db: sqlite3.Connection, uid: str, status: str, notes: str | None = None, score: float | None = None):
@@ -130,4 +145,5 @@ def query(db: sqlite3.Connection, status: str | None = None, company: str | None
 def _row(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["locations"] = json.loads(d["locations"] or "[]")
+    d["meta"] = json.loads(d.get("meta") or "{}")
     return d

@@ -30,14 +30,17 @@ PRESETS = {
 }
 
 BASE = "https://www.google.com/about/careers/applications/jobs/results/"
-_DS1 = re.compile(r"AF_initDataCallback\(\{key: 'ds:1'.*?data:", re.S)
+def _block(html: str, key: str):
+    m = re.search(r"AF_initDataCallback\(\{key: '" + key + r"'.*?data:", html, re.DOTALL)
+    if not m:
+        raise ValueError(f"Google page structure changed: AF_initDataCallback {key} not found")
+    data, _ = json.JSONDecoder().raw_decode(html[m.end():].lstrip())
+    return data
 
 
 def _parse(html: str) -> tuple[list, int, int]:
-    m = _DS1.search(html)
-    if not m:
-        raise ValueError("Google page structure changed: AF_initDataCallback ds:1 not found")
-    data, _ = json.JSONDecoder().raw_decode(html[m.end():].lstrip())
+    """Search results page: ds:1 = [[jobs], None, total, per_page]."""
+    data = _block(html, "ds:1")
     return data[0] or [], data[2] or 0, data[3] or 20
 
 
@@ -93,3 +96,18 @@ def fetch(company: dict, queries: list[str]) -> Iterable[Job]:
                     break
                 page += 1
                 time.sleep(0.5)
+
+
+_URL = re.compile(r"careers/applications/jobs/results/(\d+)")
+
+
+def from_url(url: str, ctx) -> Job | None:
+    """A posting page carries the job as ds:0 = [job_row, ...]."""
+    m = _URL.search(url)
+    if not m:
+        return None
+    with client(headers={"Accept": "text/html,*/*", "Accept-Language": "en-GB,en;q=0.9"}) as c:
+        r = c.get(f"{BASE}{m.group(1)}")
+        r.raise_for_status()
+    row = _block(r.text, "ds:0")[0]
+    return _to_job(ctx.key_for("google"), row)

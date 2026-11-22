@@ -57,8 +57,10 @@ def cmd_discover(a):
             if not err:
                 kept = jobs if a.no_filter else [j for j in jobs if matches(j, search)]
                 new, updated = store.upsert(db, kept)
+                listed = {j.uid for j in jobs}  # everything on the board, before the profile filter
+                store.reopen_listed(db, company["key"], listed)
                 complete = getattr(get_source(company["source"]), "COMPLETE_LISTING", False)
-                closed = store.mark_closed(db, company["key"], {j.uid for j in kept}) if jobs and complete else 0
+                closed = store.mark_closed(db, company["key"], listed) if jobs and complete else 0
                 entry.update(matched=len(kept), new=new, updated=updated, closed=closed)
             report.append(entry)
 
@@ -91,7 +93,10 @@ def cmd_jobs(a):
 def _ensure_description(db, job: dict) -> dict:
     if job.get("description"):
         return job
-    src = get_source(job["source"])
+    try:
+        src = get_source(job["source"])
+    except KeyError:  # imported from a link: no source module to ask
+        return job
     fn = getattr(src, "fetch_description", None)
     if fn:
         j = Job(**{k: job[k] for k in Job.__dataclass_fields__ if k in job})
@@ -127,23 +132,175 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60]
 
 
+def _existing_dir(uid: str):
+    if not config.APPS_DIR.exists():
+        return None
+    for jf in sorted(config.APPS_DIR.glob("*/job.json")):
+        try:
+            if json.loads(jf.read_text()).get("uid") == uid:
+                return jf.parent
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _questions_md(questions: list[dict]) -> str:
+    lines = ["# Application form questions", "",
+             "From the employer's job-board API. Draft answers in answers.md; required ones are marked *.", ""]
+    for q in questions:
+        star = " *" if q["required"] else ""
+        lines.append(f"- **{q['label']}**{star} ({q['type']})")
+        if q.get("options"):
+            lines.append(f"  - options: {' / '.join(q['options'])}")
+        if q.get("description"):
+            lines.append(f"  - {q['description'][:300]}")
+    return "\n".join(lines) + "\n"
+
+
+def _prepare(db, job: dict) -> dict:
+    job = _ensure_description(db, job)
+    d = _existing_dir(job["uid"]) or (
+        config.APPS_DIR / f"{date.today().isoformat()}-{job['company']}-{_slug(job['title'])}")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "job.json").write_text(json.dumps(job, indent=2, default=str))
+    review = "\n> Imported from page text only: check the real posting before tailoring.\n" \
+        if job.get("meta", {}).get("needs_review") else ""
+    (d / "jd.md").write_text(
+        f"# {job['title']} — {job['company']}\n{review}\n"
+        f"- Locations: {', '.join(job['locations']) or '-'}\n- Team: {job.get('team') or '-'}\n"
+        f"- URL: {job['url']}\n- Apply: {job.get('apply_url') or job['url']}\n\n"
+        f"{job.get('description') or '(description not available via API — read it from the URL)'}\n"
+    )
+    out = {"dir": str(d), "uid": job["uid"], "questions": None}
+    try:
+        fetch_q = getattr(get_source(job["source"]), "fetch_questions", None)
+    except KeyError:
+        fetch_q = None
+    if fetch_q:
+        qs = fetch_q(Job(**{k: job[k] for k in Job.__dataclass_fields__ if k in job}))
+        if qs:
+            (d / "questions.md").write_text(_questions_md(qs))
+            out["questions"] = str(d / "questions.md")
+    return out
+
+
 def cmd_prepare(a):
-    """Create an application folder with the job description, ready for tailoring."""
+    """Create (or refresh) the application folder for a job, ready for tailoring."""
     db = store.connect()
     job = store.get(db, a.uid)
     if not job:
         sys.exit(f"No job {a.uid}")
-    job = _ensure_description(db, job)
-    d = config.APPS_DIR / f"{date.today().isoformat()}-{job['company']}-{_slug(job['title'])}"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "job.json").write_text(json.dumps(job, indent=2, default=str))
-    (d / "jd.md").write_text(
-        f"# {job['title']} — {job['company']}\n\n"
-        f"- Locations: {', '.join(job['locations'])}\n- Team: {job.get('team') or '-'}\n"
-        f"- URL: {job['url']}\n- Apply: {job.get('apply_url') or job['url']}\n\n"
-        f"{job.get('description') or '(description not available via API — read it from the URL)'}\n"
-    )
-    print(json.dumps({"dir": str(d), "uid": job["uid"]}))
+    print(json.dumps(_prepare(db, job)))
+
+
+def cmd_import(a):
+    """A single posting link -> stored job (shortlisted) + application folder. For /apply <link>."""
+    from .importer import import_url
+    try:
+        job = import_url(a.url)
+    except Exception as e:  # noqa: BLE001 - report any fetch/parse failure as JSON for the skill
+        print(json.dumps({"imported": False, "url": a.url, "error": f"{type(e).__name__}: {e}"}, indent=2))
+        sys.exit(1)
+    db = store.connect()
+    same_url = db.execute("SELECT company, external_id FROM jobs WHERE url=? OR apply_url=?",
+                          (job.url, job.url)).fetchone()
+    if same_url and f"{same_url['company']}:{same_url['external_id']}" != job.uid:
+        job.company, job.external_id = same_url["company"], same_url["external_id"]  # already known
+    before = store.get(db, job.uid)
+    store.upsert(db, [job])
+    if not before or before["status"] in ("new", "skipped", "closed"):
+        store.set_status(db, job.uid, "shortlisted", notes=(before or {}).get("notes") or "imported from link")
+    row = store.get(db, job.uid)
+    out = {"imported": True, "uid": job.uid, "title": job.title, "company": job.company,
+           "status": row["status"], "previous_status": before["status"] if before else None,
+           "imported_via": job.meta.get("imported_via"), "needs_review": bool(job.meta.get("needs_review"))}
+    if not a.no_prepare:
+        out.update(_prepare(db, row))
+    print(json.dumps(out, indent=2))
+
+
+def cmd_digest(a):
+    """Markdown summary of new roles, the shortlist and what's waiting on you."""
+    from datetime import datetime, timedelta
+    db = store.connect()
+    since = a.since or (datetime.now() - timedelta(days=1)).date().isoformat()
+    new = store.query(db, status="new", since=since)
+    short = store.query(db, status="shortlisted")
+    ready = store.query(db, status="ready")
+    lines = [f"# jobhunt digest — {date.today().isoformat()}", ""]
+
+    def section(title, rows, hint):
+        lines.append(f"## {title} ({len(rows)})")
+        lines.append("")
+        if not rows:
+            lines.append("_none_")
+        for r in rows[:50]:
+            score = f"**{r['score']:.0f}** " if r.get("score") is not None else ""
+            where = ", ".join(r["locations"][:2])
+            why = f" — {r['notes']}" if r.get("notes") else ""
+            lines.append(f"- {score}[{r['title']}]({r['url']}) · {r['company']} · {where}{why}  `{r['uid']}`")
+        lines.extend(["", f"_{hint}_", ""])
+
+    section(f"New since {since}", new, "Score them with /job-hunt")
+    section("Shortlisted", short, "Apply with /apply")
+    section("Ready, waiting for your approval", ready, "Review and approve with /apply")
+    text = "\n".join(lines)
+    if a.write:
+        out = config.DATA_DIR / "digests" / f"{date.today().isoformat()}.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        print(json.dumps({"written": str(out), "new": len(new), "shortlisted": len(short), "ready": len(ready)}))
+    else:
+        print(text)
+
+
+def cmd_schedule(a):
+    from . import schedule as sch
+    current = sch.read_crontab()
+    if a.action == "list":
+        rows = [{"name": e.name, "when": sch.describe(e.line), "line": e.line} for e in sch.entries(current)]
+
+        def human(rows):
+            if not rows:
+                print("No jobhunt schedules. Add one: jobhunt schedule add --at 08:30 --task discover")
+            for r in rows:
+                print(f"  {r['name']:<16} {r['when']}")
+        _out(rows, a.json, human)
+        return
+    if a.action == "remove":
+        new, found = sch.remove(current, a.name)
+        if found and not a.dry_run:
+            sch.write_crontab(new)
+        print(json.dumps({"removed": found, "name": a.name, "dry_run": a.dry_run}))
+        return
+    # add
+    name = a.name or a.task
+    try:
+        line = sch.build_line(name, a.task, a.at, a.days, a.notify, claude=a.claude)
+    except (ValueError, RuntimeError) as e:
+        sys.exit(str(e))
+    if not a.dry_run:
+        sch.write_crontab(sch.upsert(current, name, line))
+    print(json.dumps({"scheduled": not a.dry_run, "name": name, "when": sch.describe(line),
+                      "task": a.task, "line": line, "log": str(config.DATA_DIR / "logs" / "scheduled.log")},
+                     indent=2))
+
+
+def cmd_run_scheduled(a):
+    """What cron calls. Never applies: discover (+ optional Claude scoring) and a digest."""
+    from . import schedule as sch
+    sch._log(f"run-scheduled {a.task}: start")
+    ns = argparse.Namespace(company=[], no_filter=False, json=True)
+    cmd_discover(ns)
+    rc = sch.run_claude_scoring() if a.task == "score" else 0
+    db = store.connect()
+    new = len(store.query(db, status="new", since=date.today().isoformat()))
+    short = len(store.query(db, status="shortlisted"))
+    cmd_digest(argparse.Namespace(since=None, write=True))
+    if a.notify:
+        sch.notify("jobhunt", f"{new} new roles today, {short} shortlisted. Digest in data/digests/.")
+    sch._log(f"run-scheduled {a.task}: done (exit {rc})")
+    sys.exit(rc)
 
 
 def cmd_render(a):
@@ -208,13 +365,14 @@ def cmd_sources(a):
     rows = []
     for name, mod in sorted(sources.available().items()):
         doc = (mod.__doc__ or "").strip().splitlines()
-        rows.append({"source": name, "about": doc[0] if doc else "",
+        rows.append({"source": name, "origin": sources.origin(mod), "about": doc[0] if doc else "",
                      "presets": sorted((getattr(mod, "PRESETS", None) or {}).keys())})
 
     def human(rows):
         for r in rows:
             pre = f"  presets: {', '.join(r['presets'])}" if r["presets"] else ""
-            print(f"  {r['source']:<11} {r['about']}{pre}")
+            tag = " [local]" if r["origin"] == "local" else ""
+            print(f"  {r['source']:<11} {r['about']}{tag}{pre}")
     _out(rows, a.json, human)
 
 
@@ -254,6 +412,32 @@ def main(argv=None):
     s = cmd("prepare", help="create an application folder for a job")
     s.add_argument("uid")
     s.set_defaults(fn=cmd_prepare)
+
+    s = cmd("import", help="import one job posting from a link (+ create its application folder)")
+    s.add_argument("url")
+    s.add_argument("--no-prepare", action="store_true", help="store the job but don't create the folder")
+    s.set_defaults(fn=cmd_import)
+
+    s = cmd("digest", help="markdown summary: new roles, shortlist, waiting for approval")
+    s.add_argument("--since", help="ISO date for 'new' (default: yesterday)")
+    s.add_argument("--write", action="store_true", help="save to data/digests/<date>.md")
+    s.set_defaults(fn=cmd_digest)
+
+    s = cmd("schedule", help="run discovery (and optionally Claude scoring) on a timer via cron")
+    s.add_argument("action", choices=("add", "list", "remove"))
+    s.add_argument("name", nargs="?", help="schedule name (default: the task name)")
+    s.add_argument("--task", choices=("discover", "score"), default="discover")
+    s.add_argument("--at", default="08:30", help="time of day, HH:MM 24h (default 08:30)")
+    s.add_argument("--days", default="daily", help="daily | weekdays | weekends | mon,wed,fri")
+    s.add_argument("--notify", action="store_true", help="desktop notification when it finishes")
+    s.add_argument("--claude", help="path to the claude CLI for --task score (default: found on PATH)")
+    s.add_argument("--dry-run", action="store_true", help="show the cron line, change nothing")
+    s.set_defaults(fn=cmd_schedule)
+
+    s = cmd("run-scheduled", help="(used by cron) discover, optional scoring, digest")
+    s.add_argument("task", choices=("discover", "score"))
+    s.add_argument("--notify", action="store_true")
+    s.set_defaults(fn=cmd_run_scheduled)
 
     s = cmd("render", help="render cv.md / cover_letter.md in an application folder to PDF")
     s.add_argument("dir")

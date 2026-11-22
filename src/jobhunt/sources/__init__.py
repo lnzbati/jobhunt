@@ -22,14 +22,44 @@ A source module exposes:
 `company` is one entry from companies.yaml: {key, name, source, ...source-specific fields,
 site_filters (merged in from profile.yaml)}.
 
-To add a source, drop a new module here. See docs/adding-a-source.md.
+Two places sources are loaded from:
+
+  src/jobhunt/sources/   built-in, shared, committed (this package)
+  local_sources/         yours: gitignored, for sites only you care about. Same contract, but
+                         use absolute imports (`from jobhunt.models import Job`). A local module
+                         with the same name as a built-in one overrides it, which is handy for
+                         patching a broken site before an upstream fix lands.
+                         Override the folder with JOBHUNT_LOCAL_SOURCES=/some/dir.
+
+See docs/adding-a-source.md.
 """
 from __future__ import annotations
 
 import importlib
+import importlib.util
+import os
 import pkgutil
+import sys
 from functools import cache
+from pathlib import Path
 from types import ModuleType
+
+LOCAL_PACKAGE = "jobhunt_local_sources"
+
+
+def local_dir() -> Path:
+    from ..config import ROOT
+    return Path(os.environ.get("JOBHUNT_LOCAL_SOURCES") or ROOT / "local_sources")
+
+
+def _load_local(path: Path) -> ModuleType:
+    name = f"{LOCAL_PACKAGE}.{path.stem}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    mod.__jobhunt_origin__ = "local"
+    return mod
 
 
 @cache
@@ -37,8 +67,19 @@ def available() -> dict[str, ModuleType]:
     mods = {}
     for info in pkgutil.iter_modules(__path__):
         if not info.name.startswith("_"):
-            mods[info.name] = importlib.import_module(f"{__name__}.{info.name}")
+            mod = importlib.import_module(f"{__name__}.{info.name}")
+            mod.__jobhunt_origin__ = "built-in"
+            mods[info.name] = mod
+    d = local_dir()
+    if d.is_dir():
+        for path in sorted(d.glob("*.py")):
+            if not path.name.startswith(("_", "test_")):
+                mods[path.stem] = _load_local(path)  # local wins over a built-in of the same name
     return mods
+
+
+def origin(mod: ModuleType) -> str:
+    return getattr(mod, "__jobhunt_origin__", "built-in")
 
 
 def get_source(name: str) -> ModuleType:
@@ -49,7 +90,7 @@ def get_source(name: str) -> ModuleType:
 
 
 def presets() -> dict[str, dict]:
-    """All built-in company presets: {key: {..., 'source': module name}}."""
+    """All company presets (built-in and local): {key: {..., 'source': module name}}."""
     out = {}
     for name, mod in available().items():
         for key, cfg in (getattr(mod, "PRESETS", None) or {}).items():

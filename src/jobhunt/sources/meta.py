@@ -161,3 +161,26 @@ def fetch_description(job: Job) -> str | None:
                     parts.append(f"## {k.capitalize()}\n{v}")
             return html_to_text("\n\n".join(p for p in parts if p))
     return None
+
+
+_URL = re.compile(r"metacareers\.com/(?:v2/)?(?:jobs|profile/job_details)/(\d+)")
+
+
+def from_url(url: str, ctx) -> Job | None:
+    """Job pages carry a schema.org JobPosting; keep Meta's numeric id so the uid matches discovery."""
+    m = _URL.search(url)
+    if not m:
+        return None
+    from ..importer import _from_json_ld  # lazy: importer imports the sources package
+    jid = m.group(1)
+    page_url = f"{BASE}/jobs/{jid}/"
+    with _browser() as c:
+        r = c.get(page_url)
+        r.raise_for_status()
+    job = _from_json_ld(page_url, r.text, ctx)
+    if not job:
+        raise ValueError("Meta page structure changed: no JobPosting on the job page")
+    job.company, job.source, job.external_id, job.url = ctx.key_for("meta"), "meta", jid, page_url
+    job.apply_url = None
+    job.meta["imported_via"] = "meta"
+    return job

@@ -27,3 +27,4 @@ def test_meta_doc_id_pattern():
     bundle = ('__d("CareersJobSearchResultsDataQuery_candidate_portalRelayOperation",[],'
               '(function(t,n,r,o,a,i){a.exports="40084319704492118"}),null);')
     assert meta._OP.search(bundle).group(1) == "40084319704492118"
+

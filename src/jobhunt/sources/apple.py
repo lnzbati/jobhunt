@@ -89,12 +89,15 @@ def fetch(company: dict, queries: list[str]) -> Iterable[Job]:
                 time.sleep(0.5)
 
 
-def fetch_description(job: Job) -> str | None:
+def _details(position_id: str) -> dict | None:
     with client(headers={"Accept": "text/html,*/*"}) as c:
-        r = c.get(f"{BASE}/{LOCALE}/details/{job.external_id}/x")
-        if r.status_code != 200:
-            return None
-        d = _hydration(r.text)["loaderData"]["jobDetails"]["jobsData"]
+        r = c.get(f"{BASE}/{LOCALE}/details/{position_id}/x")
+    if r.status_code != 200:
+        return None
+    return _hydration(r.text)["loaderData"]["jobDetails"]["jobsData"]
+
+
+def _description(d: dict) -> str | None:
     sections = [
         ("Summary", d.get("jobSummary")),
         ("Description", d.get("description")),
@@ -103,3 +106,23 @@ def fetch_description(job: Job) -> str | None:
         ("Preferred qualifications", d.get("preferredQualifications")),
     ]
     return "\n\n".join(f"## {h}\n{html_to_text(t)}" for h, t in sections if t) or None
+
+
+def fetch_description(job: Job) -> str | None:
+    d = _details(job.external_id)
+    return _description(d) if d else None
+
+
+_URL = re.compile(r"jobs\.apple\.com/[^?#]*details/(\d+)")
+
+
+def from_url(url: str, ctx) -> Job | None:
+    m = _URL.search(url)
+    if not m:
+        return None
+    d = _details(m.group(1))
+    if not d:
+        raise LookupError(f"Apple posting {m.group(1)} not found (closed?)")
+    job = _to_job(ctx.key_for("apple"), {**d, "positionId": d.get("positionId") or m.group(1)})
+    job.description = _description(d)
+    return job

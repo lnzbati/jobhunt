@@ -1,150 +1,390 @@
+<div align="center">
+
 # jobhunt
 
-Follow the companies you care about, get the new roles that fit you, tailor a CV and cover
-letter for each from a single source of truth, and fill in the applications. Nothing is
-submitted until you approve it.
+**Follow the companies you care about. Get the roles that fit you.<br>Apply with a tailored CV and cover letter, and nothing is sent without your OK.**
 
-It's a [Claude Code](https://claude.com/claude-code) skill (`/job-hunt`) on top of a small
-Python CLI:
+[![CI](https://github.com/lnzbati/jobhunt/actions/workflows/ci.yml/badge.svg)](https://github.com/lnzbati/jobhunt/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Claude Code skill](https://img.shields.io/badge/Claude%20Code-skill-d97757)
 
-| Part | Does |
+[Quick start](#quick-start) · [Everyday use](#everyday-use) · [Scheduling](#run-it-every-morning) · [Supported sites](#supported-careers-sites) · [Privacy & safety](#privacy-and-safety) · [FAQ](#faq)
+
+</div>
+
+---
+
+## What it does
+
+jobhunt is an assistant for your job search that runs on your own computer inside
+[Claude Code](https://claude.com/claude-code). You tell it who you are and which companies
+you're interested in. It then:
+
+1. **Checks those companies' careers pages** for new openings. It reads Apple, Google, Meta,
+   Microsoft, any company on Greenhouse, Lever or Ashby, and more.
+2. **Scores each role against your profile** and keeps a shortlist, with a one-line reason
+   for every score.
+3. **Writes a CV and cover letter for each role** using only facts you've written down. It
+   never invents experience.
+4. **Fills in the application form** in your browser and shows you the result.
+5. **Submits only when you say so**, one application at a time.
+
+It works with three commands:
+
+| Command | What happens |
 |---|---|
-| `jobhunt` CLI | Fetches postings, filters them, stores state in SQLite, creates application folders, renders PDFs. Deterministic, no model calls. |
-| `/job-hunt` skill | Claude scores roles against your profile, tailors your CV and cover letter (no fabrication), fills in forms in your browser, and stops for approval before each submit. It also builds new sources for unsupported careers sites. |
+| `/job-hunt` | Finds new roles at your companies and builds your shortlist |
+| `/apply` | Applies to the roles you pick from your shortlist |
+| `/apply <link>` | Applies to one job from any link you paste |
 
-## Prerequisites
+## How it works
 
-| Needed for | What |
-|---|---|
-| Everything | [uv](https://docs.astral.sh/uv/) (it installs Python 3.11+ for you) |
-| The `/job-hunt` skill | [Claude Code](https://claude.com/claude-code) |
-| Applying | A browser tool Claude Code can drive in your signed-in browser: [gstack](https://github.com/garrytan/gstack) `/browse`, Claude in Chrome, or a Playwright MCP. Without one, the skill prepares everything and you submit by hand. |
-| PDF output (optional) | `uv sync --extra pdf && uv run playwright install chromium`. Otherwise you get HTML. |
-| New custom-site sources (optional) | [reverse-api-engineer](https://github.com/kalil0321/reverse-api-engineer): `uv tool install reverse-api-engineer` (needs Node.js 20.19+). Only needed to support a careers site the built-in sources don't cover. The skill asks before installing it. |
+```mermaid
+flowchart LR
+    A["Your companies<br/><sub>companies.yaml</sub>"] --> B["/job-hunt<br/><sub>find & score</sub>"]
+    P["Your profile<br/><sub>facts, preferences</sub>"] --> B
+    B --> S["Shortlist"]
+    L["Any job link"] --> AP
+    S --> AP["/apply<br/><sub>tailor & fill</sub>"]
+    P --> AP
+    AP --> R["CV + cover letter PDFs<br/>form filled in"]
+    R --> Y{"You approve?"}
+    Y -- yes --> D["Submitted ✅"]
+    Y -- no --> X["Nothing sent"]
+```
+
+Finding roles is done by a small Python tool (`jobhunt`) that talks to the careers sites
+directly. It's fast, free, and uses no AI. The judgment calls are done by Claude: which roles
+fit, how to present your experience, how to answer the form's questions.
+
+---
 
 ## Quick start
 
+### 1. Install what you need
+
+| You need | Why | How |
+|---|---|---|
+| **Claude Code** | Runs the `/job-hunt` and `/apply` commands | [Install guide](https://docs.claude.com/en/docs/claude-code) |
+| **uv** | Installs and runs the Python tool (and Python itself) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` ([other options](https://docs.astral.sh/uv/)) |
+| **A browser tool for Claude** | Lets Claude fill in application forms in your browser | [gstack](https://github.com/garrytan/gstack) `/browse`, Claude in Chrome, or a Playwright MCP |
+
+> [!TIP]
+> No browser tool? Everything still works except the form filling. You get the finished PDFs
+> and drafted answers, and submit them yourself.
+
+### 2. Get jobhunt
+
 ```bash
-git clone https://github.com/lnzbati/jobhunt.git && cd jobhunt
-uv sync
-
-# 1. Companies: add by name (companies.yaml is created and gitignored)
-uv run jobhunt add Apple                 # built-in source
-uv run jobhunt add Monzo                 # Greenhouse/Lever/Ashby board detected automatically
-uv run jobhunt add Stripe --url https://job-boards.greenhouse.io/stripe   # exact board from a URL
-#    ...or start from the example list
-cp companies.example.yaml companies.yaml
-
-# 2. Profile (both gitignored)
-cp profile/profile.example.yaml profile/profile.yaml
-cp profile/master_facts.example.md profile/master_facts.md
+git clone https://github.com/lnzbati/jobhunt.git
+cd jobhunt
+uv sync --extra pdf                      # installs the tool, plus PDF support
+uv run playwright install chromium       # one-off, ~150 MB, used to make the PDFs
 ```
 
-Then, in Claude Code from this directory, run `/job-hunt`. On first run it checks what's
-missing and can draft your profile from your CV.
+### 3. Open it in Claude Code and set up your profile
+
+```bash
+claude
+```
+
+Then type:
+
+```
+/job-hunt setup
+```
+
+Claude asks for your CV (a file path or pasted text) and a few questions: what roles, where,
+whether you need a visa, and so on. From that it writes two private files:
+
+| File | What's in it |
+|---|---|
+| `profile/master_facts.md` | **Everything you can stand behind**: every job, achievement, number and skill. CVs are built only from this. |
+| `profile/profile.yaml` | Contact details, what you're looking for, and standard answers for forms (notice period, work authorisation…) |
+
+Read both and correct anything that's off. They're the foundation for everything else.
+
+### 4. Choose your companies
+
+Tell Claude in plain words, for example *"follow Apple, Monzo and Wayve"*, or use the terminal:
+
+```bash
+uv run jobhunt add Apple
+uv run jobhunt add Monzo
+uv run jobhunt add "Wayve"
+```
+
+jobhunt recognises the built-in sites and finds the job board for most other companies
+automatically. If it can't, Claude offers to build support for that site
+(see [Adding a site](#adding-a-careers-site)).
+
+**You're set up.** Run `/job-hunt` to see what's out there.
+
+---
+
+## Everyday use
+
+### Find and shortlist roles: `/job-hunt`
+
+```
+/job-hunt
+/job-hunt only platform roles this time
+```
+
+Claude checks every company, scores new roles from 0 to 100 against your profile, and shows
+your shortlist:
+
+```
+Score  Company   Role                                   Location   Why
+  86   Acme      Senior Backend Engineer, Payments      London     Payments + Postgres scale match
+  78   Globex    Platform Engineer                      Remote EU  Kubernetes, infra ownership
+  71   Initech   ML Infrastructure Engineer             London     Good fit, but asks for Rust
+```
+
+Roles it decides against are kept with the reason, so they aren't shown again.
+
+### Apply from your shortlist: `/apply`
+
+```
+/apply
+```
+
+Pick the roles you want. For each one Claude:
+
+1. **Tailors** a CV and cover letter from your facts file and renders them as PDFs.
+2. **Drafts answers** to the form's questions. It asks you about anything it can't answer
+   from your profile, like salary for a new country. It never guesses those.
+3. **Fills in the form** in your browser, uploads the PDFs, and takes a screenshot.
+4. **Stops and shows you** the CV, the answers, any gaps, and the screenshot.
+
+You reply with what to send, for example *"submit 1 and 3"*. Only those go out.
+
+### Apply to a single job from a link: `/apply <link>`
+
+Found a role somewhere else? Paste the link:
+
+```
+/apply https://jobs.ashbyhq.com/acme/0a1b2c3d-4e5f-6789-abcd-ef0123456789
+/apply https://careers.example.com/jobs/senior-backend-engineer
+```
+
+This works with any careers site. jobhunt reads the posting (most sites publish it in a
+standard format), then the same tailor, fill and approve steps follow.
+
+### What you get for each application
+
+Every application gets its own folder in `applications/`, for example
+`applications/2026-11-22-acme-senior-backend-engineer/`:
+
+| File | What it is |
+|---|---|
+| `cv.pdf` · `cover_letter.pdf` | What gets uploaded. The `.md` versions are editable. |
+| `jd.md` | The job description, saved in case the posting disappears |
+| `questions.md` | The form's actual questions, when the site provides them |
+| `answers.md` | The answers given on the form |
+| `tailoring.md` | What was emphasised, what was left out, and gaps against the job |
+| `pre-submit.png` | Screenshot of the filled-in form before sending |
+| `confirmation.txt` | The confirmation after you approved and it was submitted |
+
+---
+
+## Run it every morning
+
+jobhunt can check for new roles on a schedule and leave you a summary:
+
+```bash
+uv run jobhunt schedule add --task discover --at 08:30 --days weekdays --notify
+```
+
+Each weekday at 08:30 it fetches new roles and writes a digest to `data/digests/<date>.md`,
+with a desktop notification. That's free, with no AI involved. Use `--task score` to also
+have Claude score them, so your shortlist is ready when you sit down (that uses model usage).
+
+```bash
+uv run jobhunt schedule list               # what's scheduled
+uv run jobhunt schedule remove discover    # stop it
+```
+
+Or just ask: `/job-hunt schedule`.
+
+> [!NOTE]
+> Scheduled runs **never apply**. Your computer needs to be awake at that time. Details,
+> options and troubleshooting are in **[docs/scheduling.md](docs/scheduling.md)**.
+
+---
+
+## Supported careers sites
+
+| Site | Covers | How it's read |
+|---|---|---|
+| **Greenhouse** | Thousands of companies (Anthropic, Stripe, Monzo, Waymo…) | Public job-board API |
+| **Ashby** | Thousands of companies (Wayve, Notion, Cohere…) | Public job-board API |
+| **Lever** | Thousands of companies (Spotify, Palantir…) | Public job-board API |
+| **Apple** | jobs.apple.com | Built-in |
+| **Google** | Google, DeepMind, YouTube | Built-in |
+| **Meta** | metacareers.com | Built-in |
+| **Microsoft** | And other sites on Eightfold.ai | Built-in |
+| **Any job link** | `/apply <link>` on almost any site | The posting's standard job data, or the page itself |
+
+`uv run jobhunt sources` lists everything available in your copy.
+
+### Adding a careers site
+
+If a company's site isn't covered, ask `/job-hunt add <company>`. Claude offers to build
+support for it with [reverse-api-engineer](https://github.com/kalil0321/reverse-api-engineer),
+which watches the site load its jobs and writes a small client for it. That costs roughly
+1 to 2.50 USD of model usage per site, once.
+
+New sites are **personal by default**. They go in `local_sources/`, which git ignores, so a
+company only you follow never ends up in the shared repo. If it's useful to others
+(especially a whole platform like Workday), move it to `src/jobhunt/sources/` and open a PR.
+The step-by-step guide is in **[docs/adding-a-source.md](docs/adding-a-source.md)**.
+
+---
+
+## Privacy and safety
+
+| | |
+|---|---|
+| 🔒 **Your data stays local** | Your profile, facts, companies, personal sources, application folders and job database (`profile/`, `companies.yaml`, `local_sources/`, `applications/`, `data/`) are all excluded from git. Nothing personal is ever committed. |
+| ✋ **You approve every submission** | Applications can't be withdrawn, so each one waits for your explicit OK for that specific role. |
+| 🚫 **No made-up experience** | Every line in a CV or letter must come from your facts file. Gaps are reported, not covered up. |
+| 🤖 **Employers' AI policies respected** | If a form asks you to write an answer yourself, Claude leaves it for you. |
+| 🧩 **No tricks** | It never solves captchas or gets around logins, and it doesn't touch LinkedIn (automating it gets accounts banned). |
+
+> [!NOTE]
+> When you share your CV with Claude, or Claude reads your files, that content is part of
+> your Claude Code conversation. It's not sent anywhere else, and applications go only to the
+> employer you approve.
+
+The built-in Apple, Google, Meta and Microsoft readers use the same public job
+listings those sites show any visitor, but they aren't official APIs. Keep request rates
+low (one check a day is plenty) and expect them to need fixing when a site changes. A
+weekly automated check catches that. This project isn't affiliated with any of these companies.
+
+---
+
+## FAQ
+
+<details>
+<summary><b>Does it cost anything?</b></summary>
+
+jobhunt itself is free. Finding roles uses no AI. Scoring, tailoring and form filling run in
+Claude Code and count towards your Claude plan or API usage, like any other Claude Code work.
+Scheduled `discover` runs are free. Scheduled `score` runs use model usage each time.
+</details>
+
+<details>
+<summary><b>Can it apply to jobs while I'm away?</b></summary>
+
+No, by design. It can find and score roles on a schedule, but every submission needs your
+explicit approval. You're the one accountable for what's sent under your name.
+</details>
+
+<details>
+<summary><b>The roles it finds aren't relevant.</b></summary>
+
+Tune `search` in `profile/profile.yaml`: the search terms for the big sites, the title words
+to include or exclude, and your locations. `preferences` controls the scoring. Then run
+`/job-hunt` again.
+</details>
+
+<details>
+<summary><b>A company shows an error when checking for roles.</b></summary>
+
+For the built-in sites (Apple, Google, Meta, Microsoft) it usually means the site
+changed. Ask Claude to fix it, or open an issue. The other companies keep working in the
+meantime.
+</details>
+
+<details>
+<summary><b>The site wants me to log in or solve a captcha.</b></summary>
+
+Claude pauses and hands over to you. Log in or solve it in the browser, tell Claude you're
+done, and it carries on. Apple, Google, Microsoft, Meta and Workday sites all need an account
+to apply.
+</details>
+
+<details>
+<summary><b>Can I edit the CV before it's sent?</b></summary>
+
+Yes. Edit `cv.md` or `cover_letter.md` in the application folder, ask Claude to re-render
+(`uv run jobhunt render <folder>`), and approve when you're happy.
+</details>
+
+---
 
 ## Configuration
 
-All three files are yours and gitignored. Only the `.example` versions are tracked.
+<details>
+<summary><b>companies.yaml</b>: who to follow</summary>
 
-**`companies.yaml`**: who to follow. Manage it with the CLI or edit it by hand.
-[`companies.example.yaml`](companies.example.yaml) documents the format.
+Created for you by `jobhunt add`. You can also copy [`companies.example.yaml`](companies.example.yaml),
+which documents every option, and edit it by hand.
 
 ```bash
-uv run jobhunt companies                 # what you follow
-uv run jobhunt sources                   # available sources + built-in presets
-uv run jobhunt add "<Name>" [--url <careers page>] [--key <id>]
+uv run jobhunt companies                 # list
+uv run jobhunt add "<Name>" [--url <careers page>]
 uv run jobhunt remove <key>              # or set `enabled: false` to pause
 ```
+</details>
 
-**`profile/profile.yaml`**: contact details, what to look for, how to score, standard form
-answers. Its sections:
+<details>
+<summary><b>profile/profile.yaml</b>: what you want and standard answers</summary>
 
-- `search`: queries for the big search-based sites, title include/exclude lists, locations,
-  and which remote regions count.
-- `search.site_filters.<company key>`: server-side filters for the big sites, for example
-  Apple's location slug, Google's location and Microsoft's location. Those sites list tens of
-  thousands of roles, so they are searched rather than crawled.
-- `preferences`: what Claude scores against (seniority, target roles, must-haves, what to avoid).
-- `application`: answers reused verbatim in forms (work authorisation, notice period,
-  salary, demographics).
-- `apply`: the approval gate and per-company weekly cap.
+See [`profile/profile.example.yaml`](profile/profile.example.yaml). Its sections:
 
-**`profile/master_facts.md`**: every claim you can stand behind. Tailoring may select,
-reorder and rephrase from it, but never add to it.
+| Section | Purpose |
+|---|---|
+| `me` | Name and contact details, used on the CV and in forms |
+| `search` | Search terms for big sites, title include/exclude words, locations, remote regions |
+| `search.site_filters.<company>` | Location filters for big sites (e.g. Apple's `united-kingdom-GBR`) |
+| `preferences` | What Claude scores against: seniority, target roles, must-haves, things to avoid |
+| `application` | Answers reused in forms: work authorisation, notice, salary, demographics |
+| `apply` | Approval gate and a per-company weekly cap |
+</details>
 
-## Sources
+<details>
+<summary><b>profile/master_facts.md</b>: the only source of facts</summary>
 
-| Source | Covers | How |
-|---|---|---|
-| `greenhouse` | any company on Greenhouse | Public Job Board API |
-| `ashby` | any company on Ashby | Public Job Posting API |
-| `lever` | any company on Lever | Public Postings API |
-| `eightfold` | Eightfold.ai sites (preset: Microsoft) | Public `pcsx` JSON API (reverse-engineered) |
-| `apple` | Apple | Hydration JSON in search and details pages (reverse-engineered) |
-| `google` | Google, DeepMind, YouTube (presets: google, deepmind) | `AF_initDataCallback` page data (reverse-engineered) |
-| `meta` | Meta | Relay GraphQL persisted query + CSRF token; recovers a rotated `doc_id` itself (reverse-engineered) |
+See [`profile/master_facts.example.md`](profile/master_facts.example.md). List every role,
+achievement (with numbers) and skill you can back up in an interview. Add a "Do not mention"
+section for anything confidential.
+</details>
 
-The reverse-engineered sources were captured with reverse-api-engineer and then hardened by
-hand. Each module's docstring lists the endpoints it relies on, and `tests/test_sources.py`
-pins the parsing assumptions.
-
-**Careers site not covered?** Workday, SmartRecruiters, bespoke sites and so on: see
-[docs/adding-a-source.md](docs/adding-a-source.md), or ask `/job-hunt` to add the company and
-it will offer to build the source. A new source is one file in `src/jobhunt/sources/`, picked
-up automatically. PRs welcome.
-
-## CLI reference
+<details>
+<summary><b>CLI reference</b></summary>
 
 ```bash
-uv run jobhunt discover [<key> ...]          # fetch, prefilter, store; reports per-company errors
-uv run jobhunt jobs [--status new|...|all] [--company <key>] [--since 2026-11-01] [--full]
-uv run jobhunt show <uid>                    # full description (fetched on demand)
-uv run jobhunt status <status> <uid>... [--score N] [--notes "..."]
-uv run jobhunt prepare <uid>                 # applications/<date>-<company>-<role>/ with jd.md, job.json
-uv run jobhunt render <application dir>      # cv.md / cover_letter.md -> PDF (or HTML)
+uv run jobhunt discover [<company> ...]      # fetch new roles (all or some companies)
+uv run jobhunt jobs [--status new|shortlisted|drafted|ready|applied|skipped|closed|all]
+uv run jobhunt show <uid>                    # one role with its full description
+uv run jobhunt import <url>                  # one posting from a link -> application folder
+uv run jobhunt prepare <uid>                 # create the application folder for a role
+uv run jobhunt render <folder>               # cv.md / cover_letter.md -> PDF
+uv run jobhunt status <status> <uid>...      # move roles through the pipeline
+uv run jobhunt digest [--write]              # summary: new, shortlisted, waiting for approval
+uv run jobhunt schedule add|list|remove      # see docs/scheduling.md
+uv run jobhunt add|remove|companies|sources  # manage companies
 ```
 
-Add `--json` to any command for machine-readable output. Pipeline statuses:
-`new → shortlisted → drafted → ready → applied` (or `skipped`; roles that disappear from a
-board become `closed`).
+Add `--json` to any command for machine-readable output. A role moves through
+`new → shortlisted → drafted → ready → applied` (or `skipped`; roles taken down become `closed`).
+</details>
 
-## Design choices
-
-- **Approval before every submit.** Applications can't be withdrawn, and recruiters notice
-  batches of near-identical ones. The skill fills in the form, saves a screenshot and waits.
-- **No fabrication.** Every tailored claim must trace to `master_facts.md`, and gaps are reported
-  rather than papered over.
-- **No captcha solving, no LinkedIn automation.** Captchas, logins and account creation are
-  handed back to you.
-- **Reading via APIs, applying via the browser.** ATS submit endpoints need employer API keys
-  and are protected against bots. Filling the real form in your own browser is reliable and
-  within the sites' rules.
-- **Polite.** One `discover` per run, capped pagination, and delays between pages.
-
-## Responsible use
-
-- The built-in custom-site sources read the same **public job listings** those sites show
-  to any visitor, through the endpoints their own pages call. They aren't official APIs:
-  check each site's terms yourself, keep request rates low, and expect them to change.
-- Applications go out under your name. Review every one. The tool is built to stop
-  before submitting, so keep it that way.
-- This project isn't affiliated with or endorsed by any company it supports.
+---
 
 ## Contributing
 
-New sources and fixes are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Quick checks:
+New careers sites, fixes and ideas are welcome. Read **[CONTRIBUTING.md](CONTRIBUTING.md)** first.
 
 ```bash
-uv run --extra dev pytest -q                 # offline
-JOBHUNT_LIVE=1 uv run --extra dev pytest -m live -v   # real sites (also runs weekly in CI)
+uv sync --extra dev
+uv run pytest -q                                   # offline tests
+JOBHUNT_LIVE=1 uv run pytest -m live -v            # against the real sites
 ```
 
-## Privacy
+## License
 
-`companies.yaml`, `profile/`, `applications/` and `data/` are gitignored. Never commit HAR
-captures or reverse-api-engineer logs: they can contain cookies.
-
-## Licence
-
-MIT
+[MIT](LICENSE)

@@ -16,6 +16,7 @@ Site filters (profile.yaml -> search.site_filters.<key>):
 """
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -84,6 +85,10 @@ def fetch(company: dict, queries: list[str]) -> Iterable[Job]:
                 time.sleep(0.5)
 
 
+def _details(c, base: str, domain: str, pid: str) -> dict:
+    return _get(c, f"{base}/api/pcsx/position_details", {"domain": domain, "position_id": pid})
+
+
 def fetch_description(job: Job) -> str | None:
     base = job.url.split("/careers/")[0]
     from ..config import load_companies
@@ -91,5 +96,34 @@ def fetch_description(job: Job) -> str | None:
     if not domain:
         return None
     with client(headers={"Referer": f"{base}/careers"}) as c:
-        d = _get(c, f"{base}/api/pcsx/position_details", {"domain": domain, "position_id": job.external_id})
+        d = _details(c, base, domain, job.external_id)
     return html_to_text(d.get("jobDescription"))
+
+
+_URL = re.compile(r"(https://[^/]+)/careers/job/(\d+)")
+
+
+def from_url(url: str, ctx) -> Job | None:
+    m = _URL.search(url)
+    if not m:
+        return None
+    base, pid = m.groups()
+    sites = [c for c in ctx.companies if c.get("source") == "eightfold"] + \
+        [{"key": k, **p} for k, p in PRESETS.items()]
+    site = next((s for s in sites if s.get("base_url", "").rstrip("/") == base), None)
+    if not site:
+        return None  # an Eightfold site we don't know the domain for: let JSON-LD handle it
+    with client(headers={"Referer": f"{base}/careers"}) as c:
+        p = _details(c, base, site["domain"], pid)
+    return Job(
+        company=ctx.key_for("eightfold", name=site.get("name")),
+        source="eightfold",
+        external_id=str(p.get("id") or pid),
+        title=(p.get("name") or "").strip(),
+        url=f"{base}/careers/job/{pid}",
+        locations=p.get("standardizedLocations") or p.get("locations") or [],
+        team=p.get("department"),
+        remote=(p.get("workLocationOption") == "remote") or None,
+        posted_at=_iso(p.get("postedTs")),
+        description=html_to_text(p.get("jobDescription")),
+    )
