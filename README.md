@@ -26,7 +26,9 @@ you're interested in. It then:
 2. **Scores each role against your profile** and keeps a shortlist, with a one-line reason
    for every score.
 3. **Writes a CV and cover letter for each role** using only facts you've written down. It
-   never invents experience.
+   never invents experience. Each CV is checked the way employers' screening software (ATS)
+   reads it: does it parse cleanly, and does it use the job's key terms wherever your
+   experience supports them?
 4. **Fills in the application form** in your browser and shows you the result.
 5. **Submits only when you say so**, one application at a time.
 
@@ -152,11 +154,15 @@ Roles it decides against are kept with the reason, so they aren't shown again.
 
 Pick the roles you want. For each one Claude:
 
-1. **Tailors** a CV and cover letter from your facts file and renders them as PDFs.
-2. **Drafts answers** to the form's questions. It asks you about anything it can't answer
+1. **Tailors** a CV and cover letter from your facts file and renders them as PDFs. It lists
+   the job's key terms first, uses every one your facts support (in the job's own wording), and
+   reports the ones you don't have as gaps instead of adding them.
+2. **Checks the CV like an ATS would**: it extracts the text from the PDF, confirms your
+   name, email, phone, headings and dates come through intact, and measures key-term coverage.
+3. **Drafts answers** to the form's questions. It asks you about anything it can't answer
    from your profile, like salary for a new country. It never guesses those.
-3. **Fills in the form** in your browser, uploads the PDFs, and takes a screenshot.
-4. **Stops and shows you** the CV, the answers, any gaps, and the screenshot.
+4. **Fills in the form** in your browser, uploads the PDFs, and takes a screenshot.
+5. **Stops and shows you** the CV, the answers, key-term coverage and gaps, and the screenshot.
 
 You reply with what to send, for example *"submit 1 and 3"*. Only those go out.
 
@@ -179,7 +185,9 @@ Every application gets its own folder in `applications/`, for example
 
 | File | What it is |
 |---|---|
-| `cv.pdf` · `cover_letter.pdf` | What gets uploaded. The `.md` versions are editable. |
+| `First-Last-CV.pdf` · `First-Last-Cover-Letter.pdf` | What gets uploaded, named after you because recruiters see the file name. `cv.md` and `cover_letter.md` are the editable sources. |
+| `keywords.md` | The job's key terms (must-haves marked `!`) |
+| `ats-plan.md` · `ats.md` | Which key terms your facts support, and the check of the finished PDF: parsing, coverage, gaps |
 | `jd.md` | The job description, saved in case the posting disappears |
 | `questions.md` | The form's actual questions, when the site provides them |
 | `answers.md` | The answers given on the form |
@@ -321,6 +329,19 @@ on every run. The file is private (gitignored). See
 </details>
 
 <details>
+<summary><b>What does the ATS check do, and will it stuff keywords into my CV?</b></summary>
+
+Most employers run CVs through an applicant tracking system that extracts the text and
+searches it for the job's key terms. jobhunt checks for both problems an ATS can catch: a CV
+that doesn't extract cleanly (missing contact details, unusual headings, merged characters
+like "ﬁ" that break search), and missing key terms.
+
+It never adds a term your facts don't support. Those are listed as **gaps** in `ats.md` and
+`tailoring.md`, for you to address in the cover letter or the interview, and the coverage
+figure reflects the truth.
+</details>
+
+<details>
 <summary><b>Can I edit the CV before it's sent?</b></summary>
 
 Yes. Edit `cv.md` or `cover_letter.md` in the application folder, ask Claude to re-render
@@ -384,7 +405,9 @@ uv run jobhunt jobs [--status new|shortlisted|drafted|ready|applied|skipped|clos
 uv run jobhunt show <uid>                    # one role with its full description
 uv run jobhunt import <url>                  # one posting from a link -> application folder
 uv run jobhunt prepare <uid>                 # create the application folder for a role
-uv run jobhunt render <folder>               # cv.md / cover_letter.md -> PDF
+uv run jobhunt render <folder>               # cv.md / cover_letter.md -> PDF (+ First-Last-CV.pdf)
+uv run jobhunt ats <folder> --plan           # job's key terms vs your facts: use these / gaps
+uv run jobhunt ats <folder>                  # check the rendered CV like an ATS: parsing + coverage
 uv run jobhunt status <status> <uid>...      # move roles through the pipeline
 uv run jobhunt digest [--write]              # summary: new, shortlisted, waiting for approval
 uv run jobhunt schedule add|list|remove      # see docs/scheduling.md

@@ -303,6 +303,34 @@ def cmd_run_scheduled(a):
     sys.exit(rc)
 
 
+def cmd_ats(a):
+    """ATS plan (key terms vs your facts, before writing) or check (the rendered cv.pdf)."""
+    from pathlib import Path
+
+    from . import ats
+    d = Path(a.dir)
+    if not (d / "jd.md").exists():
+        sys.exit(f"{d} has no jd.md: run `jobhunt prepare <uid>` first")
+    facts_path = config.PROFILE_DIR / "master_facts.md"
+    if not facts_path.exists():
+        sys.exit("profile/master_facts.md not found: ATS planning compares the job with your facts")
+    facts = facts_path.read_text()
+    mode = "plan" if a.plan else "check"
+    try:
+        rep = ats.plan(d, facts) if a.plan else ats.check(d, facts, config.load_profile().get("me") or {})
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+    md = ats.to_markdown(rep, mode)
+    out_file = d / ("ats-plan.md" if a.plan else "ats.md")
+    out_file.write_text(md)
+    if a.json:
+        print(json.dumps({"mode": mode, "report": str(out_file), "terms_source": rep.source,
+                          "covered": rep.covered, "supported_missing": rep.supported_missing, "gaps": rep.gaps,
+                          "must_haves": [t.label for t in rep.terms if t.must], "checks": rep.checks}, indent=2))
+    else:
+        print(md)
+
+
 def cmd_render(a):
     from .render import render_dir
     print(json.dumps(render_dir(a.dir), indent=2))
@@ -438,6 +466,11 @@ def main(argv=None):
     s.add_argument("task", choices=("discover", "score"))
     s.add_argument("--notify", action="store_true")
     s.set_defaults(fn=cmd_run_scheduled)
+
+    s = cmd("ats", help="ATS: --plan (job terms vs your facts) or check the rendered cv.pdf")
+    s.add_argument("dir", help="application folder")
+    s.add_argument("--plan", action="store_true", help="before writing: which job terms your facts support")
+    s.set_defaults(fn=cmd_ats)
 
     s = cmd("render", help="render cv.md / cover_letter.md in an application folder to PDF")
     s.add_argument("dir")

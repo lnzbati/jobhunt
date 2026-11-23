@@ -4,6 +4,8 @@ Install once:  uv sync --extra pdf && uv run playwright install chromium
 """
 from __future__ import annotations
 
+import re
+import shutil
 from pathlib import Path
 
 import markdown
@@ -42,6 +44,8 @@ def render_dir(app_dir: str | Path) -> dict:
                            "Run: uv sync --extra pdf && uv run playwright install chromium"}
 
     pdfs = []
+    name = (profile.get("me") or {}).get("name") or ""
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-") or None
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page()
@@ -51,5 +55,10 @@ def render_dir(app_dir: str | Path) -> dict:
             page.pdf(path=str(pdf), format="A4", print_background=True,
                      margin={"top": "14mm", "bottom": "14mm", "left": "14mm", "right": "14mm"})
             pdfs.append(str(pdf))
+            if stem:  # recruiters see the uploaded file's name: "Alex-Example-CV.pdf", not "cv.pdf"
+                label = "CV" if pdf.stem == "cv" else "Cover-Letter"
+                named = pdf.with_name(f"{stem}-{label}.pdf")
+                shutil.copyfile(pdf, named)
+                pdfs.append(str(named))
         browser.close()
     return {"rendered": pdfs}

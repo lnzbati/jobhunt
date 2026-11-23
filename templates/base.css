@@ -1,4 +1,8 @@
 * { box-sizing: border-box; }
+/* ATS: ligatures turn "fi"/"fl" into single glyphs that break keyword search in extracted text.
+   The CSS switches alone don't stop them for macOS system fonts; any non-zero letter-spacing
+   makes Chromium skip ligatures, and 0.01px is invisible. */
+html { font-variant-ligatures: none; font-feature-settings: "liga" 0, "clig" 0; letter-spacing: 0.01px; }
 body { font: 10.5pt/1.42 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #1a1a1a; margin: 0; }
 header { border-bottom: 1.5px solid #1a1a1a; padding-bottom: 6px; margin-bottom: 10px; }
 header .name { font-size: 20pt; font-weight: 700; letter-spacing: -0.3px; }

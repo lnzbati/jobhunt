@@ -50,7 +50,23 @@ Look at the arguments the user passed:
 The folder has `jd.md` (the posting), `job.json`, and for Greenhouse roles `questions.md`
 (the form's actual questions).
 
-1. **`cv.md`:** a one- to two-page CV in markdown. Use `# Name`, then `## Summary`,
+Most employers screen CVs with an applicant tracking system (ATS) that extracts the text and
+searches it for the job's key terms. Tailoring is built around that, **without ever adding
+claims the facts don't support.**
+
+1. **`keywords.md`: the job's key terms.** Read `jd.md` and list the 10–25 terms a recruiter
+   would search for: skills, tools, methods, domain terms and certifications, in the posting's
+   own wording. One per line. Put alternatives after `|` (`Kubernetes | k8s`,
+   `stakeholder management | stakeholders`), and mark must-haves from the requirements with
+   `!`. Skip soft filler like "team player" and "fast-paced".
+2. **ATS plan:** `uv run jobhunt ats <dir> --plan --json` sorts the terms into:
+   - **supported**: in master_facts. The CV should use these, in the job's exact wording
+     where it honestly describes the fact (e.g. the facts say "led migration to streaming
+     pipelines" and the job says "data pipelines": write "data pipelines").
+   - **gaps**: not in the facts. **Don't add them.** Note them in tailoring.md, and check the
+     facts for a real equivalent under other wording before calling something a gap. A
+     must-have gap is worth telling the user about before they spend time applying.
+3. **`cv.md`:** a one- to two-page CV in markdown. Use `# Name`, then `## Summary`,
    `## Experience` (each role as `### Title — Company (City) · dates` with bullets),
    `## Education` and `## Skills`. Rules:
    - **Select, reorder and rephrase only.** Every claim, number, skill, title and date must
@@ -58,19 +74,36 @@ The folder has `jd.md` (the posting), `job.json`, and for Greenhouse roles `ques
      the job wants it. A missing requirement is a gap, not something to paper over.
    - Lead with the experience most relevant to this job. Mirror its vocabulary only where it
      honestly describes what the user did.
+   - Work each supported term into a real bullet, not only the Skills line. ATSs and recruiters
+     both weigh terms that appear in context.
+   - ATS-safe layout: keep the standard section names above, plain bullets, no tables, columns,
+     icons or images. Write dates as `Mon YYYY – Mon YYYY` (or `– Present`) when the facts have
+     months, otherwise `YYYY – YYYY`. Spell out an acronym once with its expansion when the job
+     uses the other form ("Site Reliability Engineering (SRE)").
    - Respect the "Do not mention" section.
-2. **`cover_letter.md`:** write one when the form asks for it, has an optional upload, or the
+4. **`cover_letter.md`:** write one when the form asks for it, has an optional upload, or the
    user wants one. Three or four short paragraphs: why this team or problem (specific to
    the posting), the two or three most relevant pieces of evidence, a plain close. No
    clichés, and the same no-fabrication rule. Sign off with the user's name.
-3. **`answers.md`:** draft answers to the form's free-text questions (from `questions.md`,
+5. **`answers.md`:** draft answers to the form's free-text questions (from `questions.md`,
    or found while filling in step 4) using master_facts and profile.yaml → `application`.
-4. **`tailoring.md`:** what you emphasised and why, what you left out, gaps against the
+6. **`tailoring.md`:** what you emphasised and why, what you left out, gaps against the
    posting, and any claim you weren't sure was supported. Keep it short. The user reads it
    at approval time.
-5. `uv run jobhunt render <dir> --json` produces `cv.pdf` and `cover_letter.pdf`. Open the
-   PDF and check the CV fits two pages at most. Tighten it if not.
-6. `uv run jobhunt status drafted <uid>`.
+7. `uv run jobhunt render <dir> --json` produces `cv.pdf` and `cover_letter.pdf`, plus copies
+   named after the user (`First-Last-CV.pdf`). **Upload the named copies**, because recruiters
+   see the file name.
+8. **ATS check:** `uv run jobhunt ats <dir> --json` reads `cv.pdf` the way an ATS does and
+   writes `ats.md`. Fix and re-render until:
+   - no parsing check fails (contact details extract intact, standard headings, no ligatures
+     or icon glyphs) and the CV is two pages at most;
+   - the "in your facts but not in the CV" list is empty, or each remaining term was left out
+     on purpose (say why in tailoring.md).
+
+   Never chase coverage by adding gap terms. A truthful 60% beats an invented 100%, and gaps
+   are what the interview will probe. Put the coverage figure and the remaining gaps at the
+   top of tailoring.md.
+9. `uv run jobhunt status drafted <uid>`.
 
 **AI-use policies.** Some employers ask candidates not to use AI for parts of the
 application. Anthropic's form does this, for example. If the posting or form states such a
@@ -101,8 +134,8 @@ nothing for the user to type into.
 2. If the site asks you to sign in or create an account, follow "Sign-in and accounts" below.
 3. Work through the application **one screen at a time** ("Step-by-step forms" below). Fill
    the standard fields from `profile.yaml → me` and `application` (name, email, phone,
-   links, work authorisation, notice, demographics as configured). Upload `cv.pdf`, and
-   `cover_letter.pdf` where there's a slot. Paste the answers from `answers.md`.
+   links, work authorisation, notice, demographics as configured). Upload the named CV PDF
+   (`First-Last-CV.pdf`), and the named cover letter where there's a slot. Paste the answers from `answers.md`.
 4. Check everything against `answers.md` and the profile before the end, especially email,
    phone, the uploaded file names, and any answers the site pre-filled.
 5. On the final review page (or the completed form, for single-page forms), screenshot to
