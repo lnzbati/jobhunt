@@ -140,3 +140,12 @@ def test_local_sources_load_and_override(tmp_path, monkeypatch):
     finally:
         monkeypatch.delenv("JOBHUNT_LOCAL_SOURCES")
         sources.available.cache_clear()
+
+
+def test_eightfold_description_needs_no_companies_yaml(tmp_path, monkeypatch):
+    """Regression: CI and link imports have no companies.yaml; the preset must be enough."""
+    from jobhunt import config
+    from jobhunt.sources import eightfold
+    monkeypatch.setattr(config, "COMPANIES", tmp_path / "missing.yaml")
+    assert eightfold._domain_for("https://apply.careers.microsoft.com", "microsoft") == "microsoft.com"
+    assert eightfold._domain_for("https://careers.unknown.example", "unknown") is None

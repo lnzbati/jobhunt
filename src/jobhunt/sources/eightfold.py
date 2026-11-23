@@ -79,6 +79,7 @@ def fetch(company: dict, queries: list[str]) -> Iterable[Job]:
                         team=p.get("department"),
                         remote=(p.get("workLocationOption") == "remote") or None,
                         posted_at=_iso(p.get("postedTs")),
+                        meta={"base_url": base, "domain": domain},
                     )
                 if len(positions) < PAGE_SIZE or (page + 1) * PAGE_SIZE >= (data.get("count") or 0):
                     break
@@ -89,10 +90,24 @@ def _details(c, base: str, domain: str, pid: str) -> dict:
     return _get(c, f"{base}/api/pcsx/position_details", {"domain": domain, "position_id": pid})
 
 
+def _domain_for(base: str, company_key: str) -> str | None:
+    """The Eightfold group id for a site: built-in presets first, then the user's companies.yaml
+    (which may not exist, e.g. in CI or for a job imported from a link)."""
+    for key, p in PRESETS.items():
+        if p["base_url"].rstrip("/") == base or key == company_key:
+            return p["domain"]
+    from ..config import ConfigError, load_companies
+    try:
+        companies = load_companies(include_disabled=True)
+    except ConfigError:
+        return None
+    return next((c.get("domain") for c in companies
+                 if c.get("key") == company_key or c.get("base_url", "").rstrip("/") == base), None)
+
+
 def fetch_description(job: Job) -> str | None:
-    base = job.url.split("/careers/")[0]
-    from ..config import load_companies
-    domain = next((c["domain"] for c in load_companies() if c["key"] == job.company), None)
+    base = job.meta.get("base_url") or job.url.split("/careers/")[0]
+    domain = job.meta.get("domain") or _domain_for(base, job.company)
     if not domain:
         return None
     with client(headers={"Referer": f"{base}/careers"}) as c:
@@ -126,4 +141,5 @@ def from_url(url: str, ctx) -> Job | None:
         remote=(p.get("workLocationOption") == "remote") or None,
         posted_at=_iso(p.get("postedTs")),
         description=html_to_text(p.get("jobDescription")),
+        meta={"base_url": base, "domain": site["domain"]},
     )
